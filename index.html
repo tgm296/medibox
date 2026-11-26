@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MediBox Family | 家族共有お薬在庫管理</title>
+  
+  <!-- Google Fonts: Noto Sans JP & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  
+  <!-- QRCode.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans JP"', '"Inter"', 'sans-serif'],
+            num: ['"Inter"', '"Noto Sans JP"', 'sans-serif'],
+          },
+          colors: {
+            medical: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              200: '#99f6e4',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* QRコードのクワイエットゾーン（周囲の余白）と中央揃えを保証 */
+    #qrcode-container {
+      background: #ffffff;
+      padding: 16px;
+      border-radius: 12px;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #qrcode-container img,
+    #qrcode-container canvas {
+      margin: 0 auto;
+      display: block;
+    }
+
+    /* 印刷専用スタイル（薬箱貼付ラベルのみを綺麗に印刷） */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #print-label-area, #print-label-area * {
+        visibility: visible;
+      }
+      #print-label-area {
+        position: fixed;
+        left: 50%;
+        top: 20mm;
+        transform: translateX(-50%);
+        width: 85mm;
+        border: 2px solid #0f766e !important;
+        box-shadow: none !important;
+        background: white !important;
+        padding: 16px !important;
+        border-radius: 12px !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex justify-center">
+
+  <!-- モバイルファースト・アプリコンテナ -->
+  <div class="w-full max-w-md bg-slate-50 min-h-screen shadow-xl flex flex-col relative pb-24">
+
+    <!-- トップヘッダー -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 py-3 flex items-center justify-between shadow-sm">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-medical-600 text-white flex items-center justify-center shadow-sm shrink-0">
+          <i class="ph-fill ph-first-aid-kit text-2xl"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5">
+            <h1 class="text-sm font-bold text-slate-800 truncate">MediBox Family</h1>
+            <span id="sync-status-badge" class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>接続中...
+            </span>
+          </div>
+          <button onclick="openBoxModal()" class="text-[11px] text-medical-700 font-bold flex items-center gap-1 mt-0.5 hover:underline truncate max-w-[190px]">
+            <i class="ph-bold ph-house-line"></i>
+            <span id="header-box-id">薬箱ID: 未設定</span>
+            <i class="ph-bold ph-caret-down text-[10px]"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- ユーザー名 & クイックQRボタン -->
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button onclick="openUserModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1 transition" title="表示名を変更">
+          <i class="ph-fill ph-user-circle text-base text-medical-600"></i>
+          <span id="header-user-name" class="max-w-[56px] truncate">家族</span>
+        </button>
+        <button onclick="switchTab('qr')" class="bg-medical-50 hover:bg-medical-100 active:scale-95 text-medical-700 border border-medical-200 px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1 transition">
+          <i class="ph-bold ph-qr-code text-base"></i>
+          <span>QR</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- メインコンテンツ領域 -->
+    <main class="flex-1 p-4 space-y-4">
+
+      <!-- ========================================== -->
+      <!-- タブ1: 在庫一覧・残量管理ダッシュボード       -->
+      <!-- ========================================== -->
+      <section id="view-dashboard" class="space-y-4">
+        
+        <!-- ステータスサマリーカード -->
+        <div class="grid grid-cols-3 gap-2.5">
+          <button onclick="setQuickFilter('all')" id="stat-card-all" class="bg-white p-3 rounded-2xl border-2 border-medical-500 shadow-sm text-left transition active:scale-95">
+            <div class="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+              <i class="ph-fill ph-pill text-medical-600"></i> 登録薬数
+            </div>
+            <div class="text-xl font-bold font-num text-slate-800 mt-0.5" id="stat-total">0</div>
+          </button>
+
+          <button onclick="setQuickFilter('low')" id="stat-card-low" class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm text-left transition active:scale-95">
+            <div class="text-[11px] font-bold text-amber-600 flex items-center gap-1">
+              <i class="ph-fill ph-warning-circle"></i> 残量わずか
+            </div>
+            <div class="text-xl font-bold font-num text-amber-600 mt-0.5" id="stat-low">0</div>
+          </button>
+
+          <button onclick="setQuickFilter('expiry')" id="stat-card-expiry" class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm text-left transition active:scale-95">
+            <div class="text-[11px] font-bold text-rose-600 flex items-center gap-1">
+              <i class="ph-fill ph-calendar-x"></i> 期限注意
+            </div>
+            <div class="text-xl font-bold font-num text-rose-600 mt-0.5" id="stat-expiry">0</div>
+          </button>
+        </div>
+
+        <!-- 検索バー -->
+        <div class="relative">
+          <i class="ph ph-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg"></i>
+          <input 
+            type="text" 
+            id="search-input" 
+            placeholder="薬名・効能・メモ（大人用/子ども用など）で検索..." 
+            oninput="renderMedicineList()"
+            class="w-full bg-white border border-slate-200 rounded-2xl pl-10 pr-10 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-medical-500 focus:border-transparent shadow-sm"
+          />
+          <button id="clear-search-btn" onclick="clearSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1">
+            <i class="ph-fill ph-x-circle text-lg"></i>
+          </button>
+        </div>
+
+        <!-- カテゴリフィルター -->
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1" id="category-filters"></div>
+
+        <!-- フィルタ状態バナー -->
+        <div id="active-filter-banner" class="hidden bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2 flex items-center justify-between text-xs text-amber-800">
+          <span id="active-filter-text" class="font-bold">アラート対象のみ表示中</span>
+          <button onclick="setQuickFilter('all')" class="underline font-bold text-amber-900">すべて表示</button>
+        </div>
+
+        <!-- 薬カードリスト -->
+        <div id="medicine-list" class="space-y-3">
+          <div class="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs text-slate-400">
+            データを読み込んでいます...
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ========================================== -->
+      <!-- タブ2: 家族の服用・補充履歴ログ（リアルタイム） -->
+      <!-- ========================================== -->
+      <section id="view-history" class="hidden space-y-4">
+        <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+              <i class="ph-fill ph-clock-counter-clockwise text-medical-600 text-xl"></i>
+              家族の服用・更新履歴
+            </h2>
+            <span class="text-[11px] bg-medical-50 text-medical-700 font-bold px-2.5 py-1 rounded-full">リアルタイム同期</span>
+          </div>
+          <p class="text-xs text-slate-500">
+            家族の誰が・いつ・どの薬を服用または補充したかが自動で記録されます。
+          </p>
+
+          <div id="history-list" class="divide-y divide-slate-100 pt-1">
+            <p class="text-xs text-slate-400 text-center py-6">履歴はまだありません</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- タブ3: 薬箱貼付用QRコード生成・印刷機能       -->
+      <!-- ========================================== -->
+      <section id="view-qr" class="hidden space-y-4">
+        <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-4">
+          <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-xl bg-medical-100 text-medical-700 flex items-center justify-center shrink-0">
+              <i class="ph-fill ph-qr-code text-2xl"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-slate-800">薬箱に貼る家族共有QRコード</h2>
+              <p class="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                このQRコードには現在の薬箱ID（<strong class="text-medical-700" id="qr-box-id-label"></strong>）が含まれています。家族がスマホの標準カメラで読み取るだけで、同じ薬箱の在庫画面が即座に開きます。
+              </p>
+            </div>
+          </div>
+
+          <!-- 非HTTP(S)環境（ローカル・プレビュー環境）警告バナー -->
+          <div id="qr-env-warning" class="hidden bg-amber-50 border border-amber-300 rounded-xl p-3.5 text-xs text-amber-900 space-y-1.5">
+            <div class="font-bold flex items-center gap-1.5 text-amber-800">
+              <i class="ph-fill ph-warning-circle text-lg text-amber-600 shrink-0"></i>
+              <span>現在は仮環境のため、そのままではスマホで開けません</span>
+            </div>
+            <p class="leading-relaxed text-[11px]">
+              現在は仮環境のため、GitHub Pages等に公開したURL（<code class="bg-amber-100 px-1 rounded">https://...</code>）を下の入力欄に貼り付けてQRコードを作成してください。
+            </p>
+          </div>
+
+          <!-- 公開URL入力フォーム -->
+          <div class="space-y-1.5">
+            <label class="block text-xs font-bold text-slate-700">アプリの公開URL（https://...）</label>
+            <input 
+              type="url" 
+              id="qr-base-url" 
+              oninput="generateQRCode()"
+              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-medical-500"
+              placeholder="https://ユーザー名.github.io/medibox/"
+            />
+            <div class="text-[11px] text-slate-400 break-all">
+              生成されるリンク先: <span id="qr-final-url-preview" class="font-mono text-slate-600"></span>
+            </div>
+          </div>
+
+          <!-- 印刷用ラベルプレビュー枠 -->
+          <div class="pt-1">
+            <div class="text-xs font-bold text-slate-500 mb-2 flex items-center justify-between">
+              <span>印刷ラベル プレビュー</span>
+              <span class="text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">切り取って薬箱へ貼付</span>
+            </div>
+
+            <div id="print-label-area" class="border-2 border-dashed border-medical-500 bg-white rounded-2xl p-5 text-center space-y-3 shadow-sm">
+              <div class="inline-flex items-center gap-1.5 bg-medical-600 text-white px-3.5 py-1 rounded-full text-xs font-bold">
+                <i class="ph-fill ph-first-aid-kit"></i>
+                <span>家族の薬箱 在庫管理</span>
+              </div>
+              
+              <div class="py-1 flex justify-center items-center">
+                <div id="qrcode-container" class="border border-slate-100 shadow-xs"></div>
+              </div>
+
+              <div class="space-y-1">
+                <p class="text-sm font-bold text-slate-800">📱 カメラでスキャンして残量チェック</p>
+                <p class="text-[11px] text-slate-500">薬箱ID: <span id="label-box-id" class="font-mono font-bold text-slate-700"></span></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- アクションボタン -->
+          <div class="grid grid-cols-2 gap-3 pt-1">
+            <button onclick="window.print()" class="flex items-center justify-center gap-2 bg-medical-600 hover:bg-medical-700 active:scale-95 text-white font-bold py-3.5 px-4 rounded-xl text-sm shadow-sm transition">
+              <i class="ph-bold ph-printer text-lg"></i>
+              <span>ラベルを印刷</span>
+            </button>
+            <button onclick="downloadQRImage()" class="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 active:scale-95 text-white font-bold py-3.5 px-4 rounded-xl text-sm shadow-sm transition">
+              <i class="ph-bold ph-download-simple text-lg"></i>
+              <span>画像として保存</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- タブ4: 薬箱ID・家族設定・サンプル管理         -->
+      <!-- ========================================== -->
+      <section id="view-settings" class="hidden space-y-4">
+        
+        <!-- 薬箱ID（ルーム合言葉）設定 -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
+          <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+            <i class="ph-fill ph-users-three text-medical-600 text-xl"></i>
+            家族共有・薬箱ID設定
+          </h2>
+          <p class="text-xs text-slate-500 leading-relaxed">
+            同じ「薬箱ID（合言葉）」を設定したスマホ同士で、在庫数や服用履歴がリアルタイムに同期されます。
+          </p>
+
+          <div class="bg-medical-50 border border-medical-200 rounded-xl p-3 flex items-center justify-between">
+            <div>
+              <div class="text-[10px] font-bold text-medical-700">現在接続中の薬箱ID</div>
+              <div id="settings-current-box" class="text-sm font-mono font-bold text-slate-800 mt-0.5"></div>
+            </div>
+            <button onclick="openBoxModal()" class="bg-medical-600 hover:bg-medical-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition">
+              IDを変更・作成
+            </button>
+          </div>
+
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between">
+            <div>
+              <div class="text-[10px] font-bold text-slate-500">あなたの表示名（履歴に記録）</div>
+              <div id="settings-current-user" class="text-sm font-bold text-slate-800 mt-0.5"></div>
+            </div>
+            <button onclick="openUserModal()" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold px-3.5 py-2 rounded-xl transition">
+              名前を変更
+            </button>
+          </div>
+        </div>
+
+        <!-- サンプルデータ投入 -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
+          <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+            <i class="ph-fill ph-sparkle text-amber-500 text-xl"></i>
+            初期サンプルデータの追加
+          </h2>
+          <p class="text-xs text-slate-500 leading-relaxed">
+            新しい薬箱IDを作った直後など、動作確認用に一般的な家庭の常備薬5種類をまとめて登録できます。
+          </p>
+
+          <button onclick="openConfirmDialog('add_sample')" class="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 p-3.5 rounded-xl text-xs font-bold transition active:scale-98">
+            <i class="ph-bold ph-plus-circle text-lg"></i>
+            <span>常備薬サンプル5件をこの薬箱に追加</span>
+          </button>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- フローティング新規登録ボタン -->
+    <button 
+      id="fab-add-btn"
+      onclick="openMedicineModal()" 
+      class="fixed bottom-20 right-4 sm:right-[calc(50%-210px)] z-30 bg-medical-600 hover:bg-medical-700 active:scale-90 text-white rounded-full px-5 py-3.5 shadow-lg shadow-medical-600/30 flex items-center gap-2 font-bold text-sm transition"
+    >
+      <i class="ph-bold ph-plus text-xl"></i>
+      <span>薬を登録</span>
+    </button>
+
+    <!-- ボトムナビゲーションバー（4タブ） -->
+    <nav class="fixed bottom-0 w-full max-w-md bg-white border-t border-slate-200 z-30 grid grid-cols-4 py-1.5 px-1 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+      <button onclick="switchTab('dashboard')" id="nav-dashboard" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-medical-600 font-bold transition">
+        <i class="ph-fill ph-pill text-2xl"></i>
+        <span class="text-[10px] mt-0.5">お薬一覧</span>
+      </button>
+
+      <button onclick="switchTab('history')" id="nav-history" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-slate-400 hover:text-slate-600 font-medium transition">
+        <i class="ph-bold ph-clock-counter-clockwise text-2xl"></i>
+        <span class="text-[10px] mt-0.5">服用履歴</span>
+      </button>
+
+      <button onclick="switchTab('qr')" id="nav-qr" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-slate-400 hover:text-slate-600 font-medium transition">
+        <i class="ph-bold ph-qr-code text-2xl"></i>
+        <span class="text-[10px] mt-0.5">薬箱QR</span>
+      </button>
+
+      <button onclick="switchTab('settings')" id="nav-settings" class="flex flex-col items-center justify-center py-1.5 rounded-xl text-slate-400 hover:text-slate-600 font-medium transition">
+        <i class="ph-bold ph-gear text-2xl"></i>
+        <span class="text-[10px] mt-0.5">共有設定</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- モーダル1: 薬の新規登録・編集フォーム                     -->
+  <!-- ======================================================== -->
+  <div id="medicine-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+        <h3 id="modal-title" class="text-base font-bold text-slate-800 flex items-center gap-2">
+          <i class="ph-fill ph-plus-circle text-medical-600 text-xl"></i>
+          <span>新しい薬を登録</span>
+        </h3>
+        <button onclick="closeMedicineModal()" class="w-8 h-8 rounded-full bg-slate-200/70 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i class="ph-bold ph-x"></i>
+        </button>
+      </div>
+
+      <form id="medicine-form" onsubmit="saveMedicine(event)" class="p-5 overflow-y-auto space-y-4">
+        <input type="hidden" id="med-id" />
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">お薬の名前 <span class="text-rose-500">*</span></label>
+          <input type="text" id="med-name" required placeholder="例：ロキソニンS、パブロンゴールドA" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-medical-500" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">カテゴリ</label>
+            <select id="med-category" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-medical-500">
+              <option value="鎮痛剤・解熱">鎮痛剤・解熱</option>
+              <option value="風邪薬">風邪薬</option>
+              <option value="胃腸薬">胃腸薬</option>
+              <option value="目薬・点鼻">目薬・点鼻</option>
+              <option value="外用薬・絆創膏">外用薬・絆創膏</option>
+              <option value="処方薬">処方薬</option>
+              <option value="常備薬・その他">常備薬・その他</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">1回の標準使用量</label>
+            <input type="number" id="med-dose" min="1" max="99" value="1" required class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-3 text-sm font-num focus:outline-none focus:ring-2 focus:ring-medical-500" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2.5">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">現在の残量 <span class="text-rose-500">*</span></label>
+            <input type="number" id="med-stock" min="0" max="9999" required placeholder="12" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm font-num font-bold focus:outline-none focus:ring-2 focus:ring-medical-500" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">単位</label>
+            <select id="med-unit" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-medical-500">
+              <option value="錠">錠</option>
+              <option value="包">包</option>
+              <option value="カプセル">カプセル</option>
+              <option value="枚">枚</option>
+              <option value="本">本</option>
+              <option value="個">個</option>
+              <option value="回分">回分</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">残量警告ライン</label>
+            <input type="number" id="med-threshold" min="0" max="999" value="3" required class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm font-num focus:outline-none focus:ring-2 focus:ring-medical-500" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">使用期限</label>
+          <input type="date" id="med-expiry" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-3 text-sm font-num focus:outline-none focus:ring-2 focus:ring-medical-500" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">服用メモ・対象者（大人用/子ども用など）</label>
+          <textarea id="med-memo" rows="2" placeholder="例：大人用。食後に1回2錠。15歳未満は服用不可。" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-medical-500"></textarea>
+        </div>
+
+        <div class="pt-2 flex gap-2.5">
+          <button type="button" id="delete-med-btn" onclick="deleteCurrentMedicine()" class="hidden px-4 py-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-sm transition">
+            <i class="ph-bold ph-trash text-lg"></i>
+          </button>
+          <button type="submit" class="flex-1 bg-medical-600 hover:bg-medical-700 active:scale-98 text-white font-bold py-3.5 rounded-xl text-sm shadow-md transition">
+            保存して家族と同期
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- モーダル2: 薬箱ID（ルーム合言葉）設定・切り替え           -->
+  <!-- ======================================================== -->
+  <div id="box-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+          <i class="ph-fill ph-house-line text-medical-600 text-xl"></i>
+          <span>薬箱ID（合言葉）の設定</span>
+        </h3>
+        <button onclick="closeBoxModal()" class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+          <i class="ph-bold ph-x"></i>
+        </button>
+      </div>
+      
+      <p class="text-xs text-slate-500 leading-relaxed">
+        家族みんなで共有する「薬箱ID（半角英数字・ハイフン推奨）」を入力してください。新しいIDを入力すると新しい薬箱が作られ、既存のIDを入力するとその薬箱に接続します。
+      </p>
+
+      <form onsubmit="submitBoxId(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">薬箱ID（合言葉）</label>
+          <div class="flex gap-2">
+            <input 
+              type="text" 
+              id="input-box-id" 
+              required 
+              pattern="[a-zA-Z0-9_-]{3,40}"
+              placeholder="例: sato-home2026" 
+              class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-medical-500"
+            />
+            <button type="button" onclick="generateRandomBoxId()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 rounded-xl text-xs font-bold shrink-0" title="ランダム生成">
+              自動作成
+            </button>
+          </div>
+          <p class="text-[10px] text-slate-400 mt-1">※半角英数字・ハイフン(-)・アンダースコア(_) 3〜40文字</p>
+        </div>
+
+        <button type="submit" class="w-full bg-medical-600 hover:bg-medical-700 text-white font-bold py-3 rounded-xl text-sm shadow-sm transition">
+          この薬箱IDに接続する
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- モーダル3: ユーザー表示名設定                             -->
+  <!-- ======================================================== -->
+  <div id="user-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+          <i class="ph-fill ph-user-circle text-medical-600 text-xl"></i>
+          <span>あなたの表示名</span>
+        </h3>
+        <button onclick="closeUserModal()" class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+          <i class="ph-bold ph-x"></i>
+        </button>
+      </div>
+      
+      <p class="text-xs text-slate-500 leading-relaxed">
+        薬を服用・補充したときに「誰が操作したか」を家族の履歴に表示するための名前です。
+      </p>
+
+      <form onsubmit="submitUserName(event)" class="space-y-3">
+        <input 
+          type="text" 
+          id="input-user-name" 
+          required 
+          maxlength="15"
+          placeholder="例：パパ、ママ、太郎" 
+          class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-medical-500"
+        />
+        <div class="flex flex-wrap gap-1.5">
+          <button type="button" onclick="setQuickUserName('パパ')" class="text-xs bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg font-medium">パパ</button>
+          <button type="button" onclick="setQuickUserName('ママ')" class="text-xs bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg font-medium">ママ</button>
+          <button type="button" onclick="setQuickUserName('お兄ちゃん')" class="text-xs bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg font-medium">お兄ちゃん</button>
+          <button type="button" onclick="setQuickUserName('おじいちゃん')" class="text-xs bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg font-medium">おじいちゃん</button>
+        </div>
+        <button type="submit" class="w-full bg-medical-600 hover:bg-medical-700 text-white font-bold py-3 rounded-xl text-sm shadow-sm transition">
+          表示名を保存
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- モーダル4: カスタム確認ダイアログ                         -->
+  <!-- ======================================================== -->
+  <div id="confirm-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-xs rounded-3xl p-5 shadow-2xl space-y-4 text-center">
+      <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 mx-auto flex items-center justify-center text-2xl">
+        <i class="ph-fill ph-warning"></i>
+      </div>
+      <div class="space-y-1">
+        <h4 id="confirm-title" class="text-base font-bold text-slate-800">確認</h4>
+        <p id="confirm-message" class="text-xs text-slate-500 leading-relaxed">この操作を実行してもよろしいですか？</p>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5 pt-1">
+        <button onclick="closeConfirmDialog()" class="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition">
+          キャンセル
+        </button>
+        <button id="confirm-exec-btn" class="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition">
+          実行する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 transition-all duration-300 transform -translate-y-2">
+    <div class="bg-slate-800/95 text-white px-4 py-2.5 rounded-full shadow-lg text-xs font-bold flex items-center gap-2 whitespace-nowrap">
+      <i id="toast-icon" class="ph-fill ph-check-circle text-medical-400 text-base"></i>
+      <span id="toast-msg">同期しました</span>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- Firebase Firestore リアルタイム同期 & アプリロジック       -->
+  <!-- ======================================================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // 環境変数からFirebase設定を取得
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+    let db = null;
+    let auth = null;
+    let currentUser = null;
+    let unsubscribeMeds = null;
+    let unsubscribeHistory = null;
+
+    // アプリ状態
+    let currentBoxId = '';
+    let userName = '家族';
+    let medicines = [];
+    let historyLogs = [];
+    let selectedCategory = 'すべて';
+    let quickFilter = 'all';
+    let pendingConfirmAction = null;
+
+    const CATEGORIES = [
+      { id: 'すべて', label: 'すべて', icon: 'ph-squares-four' },
+      { id: '鎮痛剤・解熱', label: '鎮痛剤・解熱', icon: 'ph-thermometer-hot' },
+      { id: '風邪薬', label: '風邪薬', icon: 'ph-virus' },
+      { id: '胃腸薬', label: '胃腸薬', icon: 'ph-heartbeat' },
+      { id: '目薬・点鼻', label: '目薬・点鼻', icon: 'ph-drop' },
+      { id: '外用薬・絆創膏', label: '外用・絆創膏', icon: 'ph-bandaids' },
+      { id: '処方薬', label: '処方薬', icon: 'ph-prescription' },
+      { id: '常備薬・その他', label: 'その他', icon: 'ph-first-aid' }
+    ];
+
+    /**
+     * 起動時の初期化
+     */
+    async function initApp() {
+      // 1. URLパラメータ (?box=〇〇) または保存済みIDの取得
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramBox = urlParams.get('box');
+      const savedBox = localStorage.getItem('medibox_box_id');
+      const savedName = localStorage.getItem('medibox_user_name');
+
+      if (savedName) {
+        userName = savedName;
+      }
+
+      if (paramBox && /^[a-zA-Z0-9_-]{3,40}$/.test(paramBox)) {
+        currentBoxId = paramBox;
+        localStorage.setItem('medibox_box_id', currentBoxId);
+      } else if (savedBox) {
+        currentBoxId = savedBox;
+      } else {
+        // 初回はランダムな家族用IDを自動生成してすぐ使えるようにする
+        currentBoxId = 'home-' + Math.random().toString(36).substring(2, 8);
+        localStorage.setItem('medibox_box_id', currentBoxId);
+      }
+
+      updateHeaderAndSettingsUI();
+      renderCategoryFilters();
+      initQRUrlField();
+
+      // 2. Firebase初期化＆認証（RULE 3: 認証完了後にFirestore操作を実行）
+      if (firebaseConfig) {
+        try {
+          const app = initializeApp(firebaseConfig);
+          auth = getAuth(app);
+          db = getFirestore(app);
+
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth);
+          }
+          currentUser = auth.currentUser;
+
+          if (currentUser) {
+            subscribeToBoxData(currentBoxId);
+          }
+        } catch (err) {
+          console.error('Firebase初期化エラー:', err);
+          setSyncBadge('offline', 'オフライン');
+        }
+      } else {
+        setSyncBadge('offline', 'ローカルモード');
+      }
+    }
+
+    /**
+     * 指定された薬箱IDのFirestoreコレクションをリアルタイム監視
+     */
+    function subscribeToBoxData(boxId) {
+      if (!db || !currentUser) return;
+
+      // 既存のリスナーを解除
+      if (unsubscribeMeds) unsubscribeMeds();
+      if (unsubscribeHistory) unsubscribeHistory();
+
+      setSyncBadge('connecting', '同期中...');
+
+      // RULE 1: /artifacts/{appId}/public/data/{collectionName} を厳守
+      const medsColRef = collection(db, 'artifacts', appId, 'public', 'data', `medibox_${boxId}_items`);
+      const historyColRef = collection(db, 'artifacts', appId, 'public', 'data', `medibox_${boxId}_logs`);
+
+      // 薬リストのリアルタイム購読（RULE 2: 複合クエリは使わずメモリ内でソート）
+      unsubscribeMeds = onSnapshot(
+        medsColRef,
+        (snapshot) => {
+          const items = [];
+          snapshot.forEach((docSnap) => {
+            items.push({ id: docSnap.id, ...docSnap.data() });
+          });
+          // 登録・更新順でソート
+          items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          medicines = items;
+          setSyncBadge('online', 'リアルタイム同期中');
+          renderMedicineList();
+        },
+        (error) => {
+          console.error('薬リスト同期エラー:', error);
+          setSyncBadge('error', '同期エラー');
+        }
+      );
+
+      // 服用履歴のリアルタイム購読
+      unsubscribeHistory = onSnapshot(
+        historyColRef,
+        (snapshot) => {
+          const logs = [];
+          snapshot.forEach((docSnap) => {
+            logs.push({ id: docSnap.id, ...docSnap.data() });
+          });
+          logs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          historyLogs = logs.slice(0, 50); // 直近50件を保持
+          renderHistoryList();
+        },
+        (error) => {
+          console.error('履歴同期エラー:', error);
+        }
+      );
+    }
+
+    function setSyncBadge(status, text) {
+      const badge = document.getElementById('sync-status-badge');
+      if (status === 'online') {
+        badge.className = 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200';
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>${text}`;
+      } else if (status === 'connecting') {
+        badge.className = 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700';
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${text}`;
+      } else {
+        badge.className = 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700';
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>${text}`;
+      }
+    }
+
+    function updateHeaderAndSettingsUI() {
+      document.getElementById('header-box-id').textContent = `薬箱ID: ${currentBoxId}`;
+      document.getElementById('header-user-name').textContent = userName;
+      document.getElementById('settings-current-box').textContent = currentBoxId;
+      document.getElementById('settings-current-user').textContent = userName;
+      document.getElementById('qr-box-id-label').textContent = currentBoxId;
+      document.getElementById('label-box-id').textContent = currentBoxId;
+    }
+
+    /**
+     * 履歴ログの記録
+     */
+    async function recordHistoryLog(medName, actionType, delta, afterStock, unit) {
+      if (!db || !currentUser) return;
+      try {
+        const historyColRef = collection(db, 'artifacts', appId, 'public', 'data', `medibox_${currentBoxId}_logs`);
+        await addDoc(historyColRef, {
+          userName: userName,
+          medName: medName,
+          actionType: actionType, // 'take' | 'add' | 'create' | 'edit'
+          delta: delta,
+          afterStock: afterStock,
+          unit: unit || '',
+          timestamp: Date.now()
+        });
+      } catch (e) {
+        console.error('履歴保存エラー:', e);
+      }
+    }
+
+    /**
+     * 使用期限の状態判定
+     */
+    function checkExpiryStatus(expiryStr) {
+      if (!expiryStr) return { status: 'ok', daysLeft: null, label: '期限未設定' };
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const expDate = new Date(expiryStr);
+      expDate.setHours(0, 0, 0, 0);
+
+      const diffTime = expDate - today;
+      const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (daysLeft < 0) {
+        return { status: 'expired', daysLeft, label: `期限切れ (${Math.abs(daysLeft)}日超過)` };
+      } else if (daysLeft <= 30) {
+        return { status: 'soon', daysLeft, label: daysLeft === 0 ? '本日が期限' : `あと${daysLeft}日` };
+      } else {
+        return { status: 'ok', daysLeft, label: expiryStr.replace(/-/g, '/') };
+      }
+    }
+
+    /**
+     * カテゴリフィルター描画
+     */
+    function renderCategoryFilters() {
+      const container = document.getElementById('category-filters');
+      container.innerHTML = CATEGORIES.map(cat => {
+        const isActive = selectedCategory === cat.id;
+        return `
+          <button 
+            onclick="selectCategory('${cat.id}')"
+            class="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition ${
+              isActive 
+                ? 'bg-medical-600 text-white shadow-sm' 
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }"
+          >
+            <i class="ph-bold ${cat.icon}"></i>
+            <span>${cat.label}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    window.selectCategory = function(catId) {
+      selectedCategory = catId;
+      renderCategoryFilters();
+      renderMedicineList();
+    };
+
+    window.setQuickFilter = function(filterType) {
+      quickFilter = filterType;
+      ['all', 'low', 'expiry'].forEach(type => {
+        const el = document.getElementById(`stat-card-${type}`);
+        if (type === filterType) {
+          el.classList.remove('border', 'border-slate-200');
+          el.classList.add('border-2', 'border-medical-500');
+        } else {
+          el.classList.remove('border-2', 'border-medical-500');
+          el.classList.add('border', 'border-slate-200');
+        }
+      });
+
+      const banner = document.getElementById('active-filter-banner');
+      const bannerText = document.getElementById('active-filter-text');
+      if (filterType === 'low') {
+        banner.classList.remove('hidden');
+        bannerText.textContent = '⚠️ 残量が少ないお薬のみ表示中';
+      } else if (filterType === 'expiry') {
+        banner.classList.remove('hidden');
+        bannerText.textContent = '⏰ 使用期限が近い・切れているお薬のみ表示中';
+      } else {
+        banner.classList.add('hidden');
+      }
+      renderMedicineList();
+    };
+
+    window.clearSearch = function() {
+      document.getElementById('search-input').value = '';
+      renderMedicineList();
+    };
+
+    /**
+     * お薬リスト描画
+     */
+    window.renderMedicineList = function() {
+      const searchQuery = document.getElementById('search-input').value.trim().toLowerCase();
+      const clearBtn = document.getElementById('clear-search-btn');
+      clearBtn.classList.toggle('hidden', !searchQuery);
+
+      let lowCount = 0;
+      let expiryAlertCount = 0;
+
+      medicines.forEach(med => {
+        if (med.stock <= med.threshold) lowCount++;
+        const exp = checkExpiryStatus(med.expiry);
+        if (exp.status === 'soon' || exp.status === 'expired') expiryAlertCount++;
+      });
+
+      document.getElementById('stat-total').textContent = medicines.length;
+      document.getElementById('stat-low').textContent = lowCount;
+      document.getElementById('stat-expiry').textContent = expiryAlertCount;
+
+      const filtered = medicines.filter(med => {
+        const matchesCat = selectedCategory === 'すべて' || med.category === selectedCategory;
+        const matchesSearch = !searchQuery || 
+          med.name.toLowerCase().includes(searchQuery) || 
+          med.category.toLowerCase().includes(searchQuery) ||
+          (med.memo && med.memo.toLowerCase().includes(searchQuery));
+
+        const isLow = med.stock <= med.threshold;
+        const exp = checkExpiryStatus(med.expiry);
+        const isExpiryAlert = exp.status === 'soon' || exp.status === 'expired';
+
+        if (quickFilter === 'low' && !isLow) return false;
+        if (quickFilter === 'expiry' && !isExpiryAlert) return false;
+
+        return matchesCat && matchesSearch;
+      });
+
+      const listContainer = document.getElementById('medicine-list');
+
+      if (filtered.length === 0) {
+        listContainer.innerHTML = `
+          <div class="bg-white rounded-2xl p-8 text-center border border-slate-200 space-y-3">
+            <div class="w-12 h-12 rounded-full bg-medical-50 text-medical-600 mx-auto flex items-center justify-center text-2xl">
+              <i class="ph-fill ph-first-aid-kit"></i>
+            </div>
+            <div class="space-y-1">
+              <p class="text-sm font-bold text-slate-700">お薬が登録されていません</p>
+              <p class="text-xs text-slate-400">右下の「薬を登録」ボタンから追加するか、「共有設定」からサンプル薬を追加できます。</p>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      listContainer.innerHTML = filtered.map(med => {
+        const isLow = med.stock <= med.threshold;
+        const isOut = med.stock === 0;
+        const exp = checkExpiryStatus(med.expiry);
+        const dose = med.dose || 1;
+
+        let cardBorderClass = 'border-slate-200';
+        if (exp.status === 'expired' || isOut) {
+          cardBorderClass = 'border-rose-300 bg-rose-50/20';
+        } else if (isLow || exp.status === 'soon') {
+          cardBorderClass = 'border-amber-300 bg-amber-50/20';
+        }
+
+        let badgesHtml = '';
+        if (isOut) {
+          badgesHtml += `<span class="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-md"><i class="ph-fill ph-warning-octagon"></i>在庫切れ</span>`;
+        } else if (isLow) {
+          badgesHtml += `<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md"><i class="ph-fill ph-warning"></i>残量わずか</span>`;
+        }
+
+        if (exp.status === 'expired') {
+          badgesHtml += `<span class="inline-flex items-center gap-1 bg-rose-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md"><i class="ph-fill ph-calendar-x"></i>${exp.label}</span>`;
+        } else if (exp.status === 'soon') {
+          badgesHtml += `<span class="inline-flex items-center gap-1 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-md"><i class="ph-fill ph-clock-countdown"></i>期限間近: ${exp.label}</span>`;
+        }
+
+        return `
+          <div class="bg-white rounded-2xl p-4 border ${cardBorderClass} shadow-sm transition">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-[11px] font-bold text-medical-700 bg-medical-50 border border-medical-100 px-2 py-0.5 rounded-md">
+                  ${escapeHtml(med.category)}
+                </span>
+                ${badgesHtml}
+              </div>
+              <button onclick="openMedicineModal('${med.id}')" class="text-slate-400 hover:text-medical-600 p-1 -mr-1 -mt-1 rounded-lg transition" aria-label="編集">
+                <i class="ph-bold ph-pencil-simple text-lg"></i>
+              </button>
+            </div>
+
+            <div class="mt-2 flex items-center justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <h3 class="text-base font-bold text-slate-800 truncate">${escapeHtml(med.name)}</h3>
+                <div class="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
+                  <span class="flex items-center gap-1">
+                    <i class="ph ph-calendar-blank"></i> 期限: <strong class="font-num ${exp.status !== 'ok' ? 'text-rose-600' : 'text-slate-600'}">${exp.label}</strong>
+                  </span>
+                </div>
+              </div>
+
+              <!-- ワンタップ服用・増減コントロール -->
+              <div class="flex items-center gap-1 bg-slate-100 p-1.5 rounded-2xl shrink-0">
+                <button 
+                  onclick="adjustStock('${med.id}', -${dose}, 'take')" 
+                  ${med.stock <= 0 ? 'disabled' : ''}
+                  class="h-11 px-2.5 rounded-xl bg-white hover:bg-rose-50 active:scale-90 disabled:opacity-40 text-slate-700 hover:text-rose-600 shadow-xs flex flex-col items-center justify-center transition"
+                  title="1回分を服用"
+                >
+                  <span class="text-xs font-bold font-num leading-none">-${dose}</span>
+                  <span class="text-[9px] font-bold text-medical-600 mt-0.5">服用</span>
+                </button>
+
+                <button 
+                  onclick="adjustStock('${med.id}', -1, 'adjust')" 
+                  ${med.stock <= 0 ? 'disabled' : ''}
+                  class="w-7 h-11 rounded-lg hover:bg-white/70 active:scale-90 disabled:opacity-30 text-slate-500 flex items-center justify-center transition"
+                  title="1つ減らす"
+                >
+                  <i class="ph-bold ph-minus text-xs"></i>
+                </button>
+
+                <div class="px-1.5 text-center min-w-[46px]">
+                  <div class="text-xl font-bold font-num leading-none ${isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-slate-800'}">
+                    ${med.stock}
+                  </div>
+                  <div class="text-[10px] font-bold text-slate-500 mt-1">${escapeHtml(med.unit)}</div>
+                </div>
+
+                <button 
+                  onclick="adjustStock('${med.id}', 1, 'add')" 
+                  class="w-9 h-11 rounded-xl bg-white hover:bg-medical-50 active:scale-90 text-medical-700 shadow-xs flex items-center justify-center transition"
+                  title="1つ補充 (+1)"
+                >
+                  <i class="ph-bold ph-plus text-sm"></i>
+                </button>
+              </div>
+            </div>
+
+            ${med.memo ? `
+              <div class="mt-2.5 pt-2 border-t border-slate-100 text-xs text-slate-600 flex items-start gap-1.5">
+                <i class="ph-fill ph-note text-slate-400 mt-0.5 shrink-0"></i>
+                <p class="leading-relaxed">${escapeHtml(med.memo)}</p>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    };
+
+    /**
+     * 履歴リスト描画
+     */
+    function renderHistoryList() {
+      const container = document.getElementById('history-list');
+      if (historyLogs.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">服用や補充の履歴はまだありません</p>`;
+        return;
+      }
+
+      container.innerHTML = historyLogs.map(log => {
+        const date = new Date(log.timestamp);
+        const timeStr = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+        
+        let badgeHtml = '';
+        if (log.actionType === 'take' || log.actionType === 'adjust') {
+          badgeHtml = `<span class="text-rose-600 font-bold font-num">${log.delta}${escapeHtml(log.unit)} 服用</span>`;
+        } else if (log.actionType === 'add') {
+          badgeHtml = `<span class="text-medical-600 font-bold font-num">+${log.delta}${escapeHtml(log.unit)} 補充</span>`;
+        } else {
+          badgeHtml = `<span class="text-blue-600 font-bold">新規登録</span>`;
+        }
+
+        return `
+          <div class="py-3 flex items-center justify-between gap-2 text-xs">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded text-[10px]">${escapeHtml(log.userName)}</span>
+                <span class="font-bold text-slate-800 truncate">${escapeHtml(log.medName)}</span>
+              </div>
+              <div class="text-[11px] text-slate-400 mt-0.5 font-num">${timeStr}（残り ${log.afterStock}${escapeHtml(log.unit)}）</div>
+            </div>
+            <div class="shrink-0 text-right">
+              ${badgeHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /**
+     * 在庫数のリアルタイム更新
+     */
+    window.adjustStock = async function(id, delta, actionType) {
+      if (!db || !currentUser) return;
+      const med = medicines.find(m => m.id === id);
+      if (!med) return;
+
+      const nextStock = Math.max(0, med.stock + delta);
+      if (nextStock === med.stock) return;
+
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', `medibox_${currentBoxId}_items`, id);
+        await updateDoc(docRef, {
+          stock: nextStock,
+          updatedAt: Date.now()
+        });
+
+        await recordHistoryLog(med.name, actionType, delta, nextStock, med.unit);
+
+        if (delta < 0) {
+          showToast(`${med.name} を服用記録（残り ${nextStock}${med.unit}）`);
+        } else {
+          showToast(`${med.name} を補充しました（残り ${nextStock}${med.unit}）`);
+        }
+      } catch (e) {
+        console.error('在庫更新エラー:', e);
+        showToast('通信エラーが発生しました', true);
+      }
+    };
+
+    /**
+     * タブ切替
+     */
+    window.switchTab = function(tabName) {
+      const views = ['dashboard', 'history', 'qr', 'settings'];
+      views.forEach(v => {
+        const viewEl = document.getElementById(`view-${v}`);
+        const navEl = document.getElementById(`nav-${v}`);
+        if (v === tabName) {
+          viewEl.classList.remove('hidden');
+          navEl.classList.remove('text-slate-400', 'font-medium');
+          navEl.classList.add('text-medical-600', 'font-bold');
+        } else {
+          viewEl.classList.add('hidden');
+          navEl.classList.remove('text-medical-600', 'font-bold');
+          navEl.classList.add('text-slate-400', 'font-medium');
+        }
+      });
+
+      document.getElementById('fab-add-btn').classList.toggle('hidden', tabName !== 'dashboard');
+
+      if (tabName === 'qr') {
+        generateQRCode();
+      }
+    };
+
+    /**
+     * QRコードURLの初期判定（非HTTP(S)環境チェック）
+     */
+    function initQRUrlField() {
+      const protocol = window.location.protocol;
+      const isHttp = protocol === 'http:' || protocol === 'https:';
+      const warningEl = document.getElementById('qr-env-warning');
+      const urlInput = document.getElementById('qr-base-url');
+      const savedPublicUrl = localStorage.getItem('medibox_public_url');
+
+      if (!isHttp) {
+        warningEl.classList.remove('hidden');
+        urlInput.value = savedPublicUrl || '';
+      } else {
+        warningEl.classList.add('hidden');
+        urlInput.value = window.location.href.split('?')[0];
+      }
+    }
+
+    /**
+     * 薬箱ID付きQRコード生成
+     */
+    window.generateQRCode = function() {
+      const container = document.getElementById('qrcode-container');
+      const previewSpan = document.getElementById('qr-final-url-preview');
+      container.innerHTML = '';
+
+      let rawUrl = document.getElementById('qr-base-url').value.trim();
+      if (rawUrl) {
+        localStorage.setItem('medibox_public_url', rawUrl);
+      }
+
+      // 入力が空の場合はダミープレースホルダーURLで仮描画
+      let baseUrl = rawUrl || 'https://example.github.io/medibox/';
+      baseUrl = baseUrl.split('?')[0];
+      const finalUrl = `${baseUrl}?box=${encodeURIComponent(currentBoxId)}`;
+
+      previewSpan.textContent = finalUrl;
+
+      new QRCode(container, {
+        text: finalUrl,
+        width: 180,
+        height: 180,
+        colorDark: '#0f172a',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    };
+
+    /**
+     * QRコードPNG画像ダウンロード（余白付きCanvasを生成して保存）
+     */
+    window.downloadQRImage = function() {
+      const container = document.getElementById('qrcode-container');
+      const srcCanvas = container.querySelector('canvas');
+      if (!srcCanvas) {
+        showToast('QRコードの取得に失敗しました', true);
+        return;
+      }
+
+      // クワイエットゾーン（周囲24pxの白余白）を追加した画像を生成
+      const padding = 24;
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = srcCanvas.width + padding * 2;
+      outCanvas.height = srcCanvas.height + padding * 2;
+      const ctx = outCanvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+      ctx.drawImage(srcCanvas, padding, padding);
+
+      const link = document.createElement('a');
+      link.download = `medibox-${currentBoxId}-qr.png`;
+      link.href = outCanvas.toDataURL('image/png');
+      link.click();
+      showToast('余白付きQR画像を保存しました');
+    };
+
+    /**
+     * 薬の登録・編集モーダル
+     */
+    window.openMedicineModal = function(medId = null) {
+      const modal = document.getElementById('medicine-modal');
+      const form = document.getElementById('medicine-form');
+      const titleEl = document.getElementById('modal-title');
+      const deleteBtn = document.getElementById('delete-med-btn');
+
+      form.reset();
+
+      if (medId) {
+        const med = medicines.find(m => m.id === medId);
+        if (!med) return;
+
+        titleEl.innerHTML = `<i class="ph-fill ph-pencil-simple text-medical-600 text-xl"></i><span>お薬情報の編集</span>`;
+        document.getElementById('med-id').value = med.id;
+        document.getElementById('med-name').value = med.name;
+        document.getElementById('med-category').value = med.category;
+        document.getElementById('med-dose').value = med.dose || 1;
+        document.getElementById('med-stock').value = med.stock;
+        document.getElementById('med-unit').value = med.unit;
+        document.getElementById('med-threshold').value = med.threshold;
+        document.getElementById('med-expiry').value = med.expiry || '';
+        document.getElementById('med-memo').value = med.memo || '';
+        deleteBtn.classList.remove('hidden');
+      } else {
+        titleEl.innerHTML = `<i class="ph-fill ph-plus-circle text-medical-600 text-xl"></i><span>新しい薬を登録</span>`;
+        document.getElementById('med-id').value = '';
+        document.getElementById('med-dose').value = 1;
+        document.getElementById('med-threshold').value = 3;
+        deleteBtn.classList.add('hidden');
+      }
+
+      modal.classList.remove('hidden');
+    };
+
+    window.closeMedicineModal = function() {
+      document.getElementById('medicine-modal').classList.add('hidden');
+    };
+
+    window.saveMedicine = async function(event) {
+      event.preventDefault();
+      if (!db || !currentUser) return;
+
+      const id = document.getElementById('med-id').value;
+      const medData = {
+        name: document.getElementById('med-name').value.trim(),
+        category: document.getElementById('med-category').value,
+        dose: Math.max(1, parseInt(document.getElementById('med-dose').value, 10) || 1),
+        stock: Math.max(0, parseInt(document.getElementById('med-stock').value, 10) || 0),
+        unit: document.getElementById('med-unit').value,
+        threshold: Math.max(0, parseInt(document.getElementById('med-threshold').value, 10) || 0),
+        expiry: document.getElementById('med-expiry').value,
+        memo: document.getElementById('med-memo').value.trim(),
+        updatedAt: Date.now()
+      };
+
+      try {
+        const medsColRef = collection(db, 'artifacts', appId, 'public', 'data', `medibox_${currentBoxId}_items`);
+        if (id) {
+          const docRef = doc(medsColRef, id);
+          await updateDoc(docRef, medData);
+          showToast('お薬情報を更新しました');
+        } else {
+          medData.createdAt = Date.now();
+          await addDoc(medsColRef, medData);
+          await recordHistoryLog(medData.name, 'create', medData.stock, medData.stock, medData.unit);
+          showToast('新しいお薬を登録しました');
+        }
+        closeMedicineModal();
+      } catch (e) {
+        console.error('保存エラー:', e);
+        showToast('保存に失敗しました', true);
+      }
+    };
+
+    window.deleteCurrentMedicine = function() {
+      const id = document.getElementById('med-id').value;
+      if (!id) return;
+      openConfirmDialog('delete_med', id);
+    };
+
+    /**
+     * 薬箱ID・ユーザー名モーダル制御
+     */
+    window.openBoxModal = function() {
+      document.getElementById('input-box-id').value = currentBoxId;
+      document.getElementById('box-modal').classList.remove('hidden');
+    };
+
+    window.closeBoxModal = function() {
+      document.getElementById('box-modal').classList.add('hidden');
+    };
+
+    window.generateRandomBoxId = function() {
+      document.getElementById('input-box-id').value = 'home-' + Math.random().toString(36).substring(2, 8);
+    };
+
+    window.submitBoxId = function(event) {
+      event.preventDefault();
+      const newId = document.getElementById('input-box-id').value.trim();
+      if (!newId) return;
+
+      currentBoxId = newId;
+      localStorage.setItem('medibox_box_id', currentBoxId);
+
+      // URLの ?box= パラメータも更新（HTTP環境の場合）
+      if (window.location.protocol.startsWith('http')) {
+        const newUrl = `${window.location.pathname}?box=${encodeURIComponent(currentBoxId)}`;
+        window.history.replaceState({}, '', newUrl);
+      }
+
+      updateHeaderAndSettingsUI();
+      subscribeToBoxData(currentBoxId);
+      closeBoxModal();
+      showToast(`薬箱ID「${currentBoxId}」に接続しました`);
+    };
+
+    window.openUserModal = function() {
+      document.getElementById('input-user-name').value = userName;
+      document.getElementById('user-modal').classList.remove('hidden');
+    };
+
+    window.closeUserModal = function() {
+      document.getElementById('user-modal').classList.add('hidden');
+    };
+
+    window.setQuickUserName = function(name) {
+      document.getElementById('input-user-name').value = name;
+    };
+
+    window.submitUserName = function(event) {
+      event.preventDefault();
+      const newName = document.getElementById('input-user-name').value.trim();
+      if (!newName) return;
+      userName = newName;
+      localStorage.setItem('medibox_user_name', userName);
+      updateHeaderAndSettingsUI();
+      closeUserModal();
+      showToast(`表示名を「${userName}」に設定しました`);
+    };
+
+    /**
+     * 確認ダイアログ・サンプル投入
+     */
+    window.openConfirmDialog = function(actionType, targetId = null) {
+      pendingConfirmAction = { actionType, targetId };
+      const modal = document.getElementById('confirm-modal');
+      const title = document.getElementById('confirm-title');
+      const msg = document.getElementById('confirm-message');
+      const execBtn = document.getElementById('confirm-exec-btn');
+
+      if (actionType === 'delete_med') {
+        title.textContent = 'このお薬を削除しますか？';
+        msg.textContent = '家族全員の画面からも削除されます。';
+        execBtn.className = 'py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition';
+        execBtn.textContent = '削除する';
+      } else if (actionType === 'add_sample') {
+        title.textContent = 'サンプル薬を追加しますか？';
+        msg.textContent = '常備薬5種類を現在の薬箱に追加します。';
+        execBtn.className = 'py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition';
+        execBtn.textContent = '追加する';
+      }
+
+      execBtn.onclick = executeConfirmAction;
+      modal.classList.remove('hidden');
+    };
+
+    window.closeConfirmDialog = function() {
+      document.getElementById('confirm-modal').classList.add('hidden');
+      pendingConfirmAction = null;
+    };
+
+    async function executeConfirmAction() {
+      if (!pendingConfirmAction || !db || !currentUser) return;
+      const { actionType, targetId } = pendingConfirmAction;
+
+      if (actionType === 'delete_med' && targetId) {
+        try {
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', `medibox_${currentBoxId}_items`, targetId);
+          await deleteDoc(docRef);
+          closeMedicineModal();
+          showToast('お薬を削除しました');
+        } catch (e) {
+          showToast('削除に失敗しました', true);
+        }
+      } else if (actionType === 'add_sample') {
+        const today = new Date();
+        const offsetDate = (days) => {
+          const d = new Date(today);
+          d.setDate(d.getDate() + days);
+          return d.toISOString().split('T')[0];
+        };
+
+        const samples = [
+          { name: 'ロキソニンS', category: '鎮痛剤・解熱', stock: 2, threshold: 4, dose: 1, unit: '錠', expiry: offsetDate(200), memo: '大人用（15歳以上）。頭痛・発熱時に食後服用。' },
+          { name: 'パブロンゴールドA微粒', category: '風邪薬', stock: 12, threshold: 5, dose: 1, unit: '包', expiry: offsetDate(20), memo: '12歳以上。食後30分以内に服用。' },
+          { name: '太田胃散〈分包〉', category: '胃腸薬', stock: 16, threshold: 4, dose: 1, unit: '包', expiry: offsetDate(365), memo: '飲みすぎ・胃もたれに。' },
+          { name: 'マイティアCL（目薬）', category: '目薬・点鼻', stock: 1, threshold: 1, dose: 1, unit: '本', expiry: offsetDate(150), memo: '家族共用。開封後は早めに使い切る。' },
+          { name: 'ケアリーヴ Mサイズ', category: '外用薬・絆創膏', stock: 20, threshold: 5, dose: 1, unit: '枚', expiry: offsetDate(500), memo: '子ども用・大人用兼用。' }
+        ];
+
+        try {
+          const medsColRef = collection(db, 'artifacts', appId, 'public', 'data', `medibox_${currentBoxId}_items`);
+          for (const item of samples) {
+            await addDoc(medsColRef, { ...item, createdAt: Date.now(), updatedAt: Date.now() });
+          }
+          switchTab('dashboard');
+          showToast('サンプル薬5件を追加しました');
+        } catch (e) {
+          showToast('サンプル追加に失敗しました', true);
+        }
+      }
+
+      closeConfirmDialog();
+    }
+
+    let toastTimeout = null;
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      const msgEl = document.getElementById('toast-msg');
+      const iconEl = document.getElementById('toast-icon');
+
+      msgEl.textContent = message;
+      iconEl.className = isError 
+        ? 'ph-fill ph-warning-circle text-rose-400 text-base' 
+        : 'ph-fill ph-check-circle text-medical-400 text-base';
+
+      toast.classList.remove('opacity-0', '-translate-y-2');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', '-translate-y-2');
+      }, 2500);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // 起動
+    initApp();
+  </script>
+</body>
+</html>
